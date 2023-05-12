@@ -1,7 +1,13 @@
+## NodeJS executable.
+option(NAPI_CMAKE_NODE_JS_EXE "NodeJS executable" "node")
+
+## Save current directory.
+set(_NAPI_CMAKE_BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
 ## Download Node API headers.
 add_custom_target (
     napi_cmake_download_node_headers
-    COMMAND ${CMAKE_COMMAND} -P "${PROJECT_SOURCE_DIR}/scripts/node_headers.cmake"
+    COMMAND ${CMAKE_COMMAND} -P "${_NAPI_CMAKE_BASE_DIR}/scripts/node_headers.cmake"
     COMMENT "NAPI-CMake: Downloading Node API headers"
 )
 
@@ -31,7 +37,7 @@ macro(add_node_module name)
     target_include_directories(name SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/node_modules/node-addon-api")
 
     ## Suffix is .node.
-    set_target_properties(name PROPERTIES PREFIX "" SUFFIX ".node")
+    set_target_properties(name PROPERTIES PREFIX "" SUFFIX ".node" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     ## Depends on node headers.
     add_dependencies(name napi_cmake_download_node_headers)
