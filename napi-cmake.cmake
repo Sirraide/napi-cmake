@@ -3,6 +3,16 @@ if (NOT NAPI_CMAKE_NODE_JS_EXE)
     set(NAPI_CMAKE_NODE_JS_EXE "node")
 endif()
 
+## Node modules path.
+if (NOT NAPI_CMAKE_NODE_MODULES_PATH)
+    set(NAPI_CMAKE_NODE_MODULES_PATH "${PROJECT_SOURCE_DIR}/node_modules")
+endif()
+
+## Make sure node_modules exists.
+if (NOT EXISTS "${NAPI_CMAKE_NODE_MODULES_PATH}")
+    message(FATAL_ERROR "NAPI-CMake: Could not find node_modules at ${NAPI_CMAKE_NODE_MODULES_PATH}. Set NAPI_CMAKE_NODE_MODULES_PATH to the path of your node_modules.")
+endif ()
+
 ## Get NodeJS version.
 execute_process(
     COMMAND "${NAPI_CMAKE_NODE_JS_EXE}" --version
@@ -101,7 +111,7 @@ macro(add_node_module name)
 
     ## Add NAPI and Node JS include directories.
     target_include_directories("${name}" SYSTEM PRIVATE "${_NAPI_CMAKE_NODE_HEADERS_PATH}")
-    target_include_directories("${name}" SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/node_modules/node-addon-api")
+    target_include_directories("${name}" SYSTEM PRIVATE "${NAPI_CMAKE_NODE_MODULES_PATH}/node-addon-api")
 
     ## Suffix is .node.
     set_target_properties("${name}" PROPERTIES PREFIX "" SUFFIX ".node" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
