@@ -1,27 +1,94 @@
 ## NodeJS executable.
-option(NAPI_CMAKE_NODE_JS_EXE "NodeJS executable" "node")
+if (NOT NAPI_CMAKE_NODE_JS_EXE)
+    set(NAPI_CMAKE_NODE_JS_EXE "node")
+endif()
 
-## Save current directory.
-set(_NAPI_CMAKE_BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")
-
-## Download Node API headers.
-add_custom_target (
-    napi_cmake_download_node_headers
-    COMMAND ${CMAKE_COMMAND} -P "${_NAPI_CMAKE_BASE_DIR}/scripts/node_headers.cmake"
-    COMMENT "NAPI-CMake: Downloading Node API headers"
-)
-
-## Determine nodejs version.
-execute_process (
-    COMMAND node --version
-    OUTPUT_VARIABLE NODE_VERSION
+## Get NodeJS version.
+execute_process(
+    COMMAND "${NAPI_CMAKE_NODE_JS_EXE}" --version
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    OUTPUT_VARIABLE _NAPI_CMAKE_NODE_VERSION
     COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE
     ECHO_ERROR_VARIABLE
 )
 
-## Add include directories.
-message(STATUS "NAPI-CMake: Using NodeJS headers at ${CMAKE_BINARY_DIR}/node-${NODE_VERSION}/include/node")
+## Trim string.
+string(STRIP "${_NAPI_CMAKE_NODE_VERSION}" _NAPI_CMAKE_NODE_VERSION)
+message(STATUS "NAPI-CMake: Using Node JS version ${_NAPI_CMAKE_NODE_VERSION}")
+
+## Download Node API headers.
+function(_napi_cmake_perform_download headers_url)
+    ## Remove old tar.gz.
+    if (EXISTS "${CMAKE_BINARY_DIR}/headers.tar.gz")
+        file(REMOVE "${CMAKE_BINARY_DIR}/headers.tar.gz")
+    endif ()
+
+    ## Strip whitespace.
+    string(STRIP "${headers_url}" url)
+
+    ## Download headers.
+    file(DOWNLOAD
+        "${url}"
+        "${CMAKE_BINARY_DIR}/headers.tar.gz"
+        TIMEOUT 10
+        STATUS status
+    )
+
+    ## Make sure it worked.
+    list(GET status 0 code)
+    if (NOT ${code} EQUAL 0)
+        list(GET status 1 err)
+        message(FATAL_ERROR "NAPI-CMake: Could not download Node API headers: ${err}")
+    endif ()
+endfunction()
+
+## Extract tarball.
+function(_napi_cmake_extract_headers)
+    message("NAPI-CMake: Extracting Node API headers")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E tar "xvf" "${CMAKE_BINARY_DIR}/headers.tar.gz"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY
+        ECHO_ERROR_VARIABLE
+        ECHO_OUTPUT_VARIABLE
+    )
+endfunction()
+
+## Download node api headers.
+function(_napi_cmake_download_node_headers)
+    ## Get headers URL from Node JS.
+    execute_process(
+        COMMAND "${NAPI_CMAKE_NODE_JS_EXE}" -p process.release.headersUrl
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        OUTPUT_VARIABLE headers_url
+        COMMAND_ERROR_IS_FATAL ANY
+        ECHO_ERROR_VARIABLE
+    )
+
+    ## Check if we already have the headers.
+    if (EXISTS "${CMAKE_BINARY_DIR}/node-version.txt")
+        file(READ "${CMAKE_BINARY_DIR}/node-version.txt" current_version)
+        if (current_version STREQUAL headers_url)
+            message(STATUS "NAPI-CMake: Node API headers are up to date")
+            return()
+        endif ()
+    endif ()
+
+    ## Log.
+    message(STATUS "NAPI-CMake: Downloading Node JS headers from ${headers_url}")
+
+    ## Download and extract.
+    _napi_cmake_perform_download("${headers_url}")
+    _napi_cmake_extract_headers()
+    file(WRITE "${CMAKE_BINARY_DIR}/node-version.txt" "${headers_url}")
+endfunction()
+
+## Download node api headers.
+_napi_cmake_download_node_headers()
+
+## Determine headers path.
+set(_NAPI_CMAKE_NODE_HEADERS_PATH "${CMAKE_BINARY_DIR}/node-${_NAPI_CMAKE_NODE_VERSION}/include/node")
+message(STATUS "NAPI-CMake: Using Node JS headers at ${_NAPI_CMAKE_NODE_HEADERS_PATH}")
 
 ## Add a native node module.
 macro(add_node_module name)
@@ -30,15 +97,12 @@ macro(add_node_module name)
     enable_language(CXX)
 
     ## Add the module as a shared library.
-    add_library(name SHARED ${ARGN})
+    add_library("${name}" SHARED ${ARGN})
 
-    ## Add NAPI and NodeJS include directories.
-    target_include_directories(name SYSTEM PRIVATE "${CMAKE_BINARY_DIR}/node-${NODE_VERSION}/include/node")
-    target_include_directories(name SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/node_modules/node-addon-api")
+    ## Add NAPI and Node JS include directories.
+    target_include_directories("${name}" SYSTEM PRIVATE "${_NAPI_CMAKE_NODE_HEADERS_PATH}")
+    target_include_directories("${name}" SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/node_modules/node-addon-api")
 
     ## Suffix is .node.
-    set_target_properties(name PROPERTIES PREFIX "" SUFFIX ".node" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-
-    ## Depends on node headers.
-    add_dependencies(name napi_cmake_download_node_headers)
+    set_target_properties("${name}" PROPERTIES PREFIX "" SUFFIX ".node" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 endmacro()
